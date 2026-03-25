@@ -1,4 +1,4 @@
-import { Point, Polyline, VertexRef, EdgeRef } from '@/types/polyline';
+import { Point, Polyline, VertexRef, EdgeRef, ViewTransform } from '@/types/polyline';
 
 export function distance(a: Point, b: Point): number {
   return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
@@ -59,4 +59,18 @@ export function nearestEdge(
     }
   }
   return best;
+}
+
+export function screenToWorld(screenPt: Point, view: ViewTransform): Point {
+  return {
+    x: (screenPt.x - view.offsetX) / view.scale,
+    y: (screenPt.y - view.offsetY) / view.scale,
+  };
+}
+
+export function worldToScreen(worldPt: Point, view: ViewTransform): Point {
+  return {
+    x: worldPt.x * view.scale + view.offsetX,
+    y: worldPt.y * view.scale + view.offsetY,
+  };
 }

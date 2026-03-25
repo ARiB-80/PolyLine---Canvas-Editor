@@ -1,8 +1,9 @@
 'use client';
 import {
-  Pencil, Hand, Trash2, Plus, Save, FolderOpen, Undo2, Redo2, Eraser
+  Pencil, Hand, Trash2, Plus, Save, FolderOpen, Undo2, Redo2, Eraser, Share2, CircleDot
 } from 'lucide-react';
 import { ToolButton } from './ToolButton';
+import { ExportMenu } from './ExportMenu';
 import { useEditorStore } from '@/state/useEditorStore';
 import { downloadJSON, readJSONFile } from '@/utils/fileIO';
 import { EditorMode } from '@/types/polyline';
@@ -16,6 +17,13 @@ export function Toolbar() {
   const loadPolylines = useEditorStore(s => s.loadPolylines);
   const showToast = useEditorStore(s => s.showToast);
   const polylines = useEditorStore(s => s.polylines);
+  const closePolyline = useEditorStore(s => s.closePolyline);
+  const exportMenuOpen = useEditorStore(s => s.exportMenuOpen);
+  const setExportMenuOpen = useEditorStore(s => s.setExportMenuOpen);
+  const activePolylineId = useEditorStore(s => s.activePolylineId);
+
+  const activePoly = activePolylineId ? polylines.find(p => p.id === activePolylineId) : null;
+  const canClose = mode === 'draw' && !!activePoly && activePoly.points.length >= 3;
 
   const toggleMode = (m: EditorMode) => setMode(mode === m ? 'idle' : m);
 
@@ -49,6 +57,15 @@ export function Toolbar() {
         active={mode === 'draw'}
         onClick={() => toggleMode('draw')}
         tooltip="Draw (B)"
+      />
+      <ToolButton
+        icon={<CircleDot size={18} strokeWidth={2.5} />}
+        label="Close"
+        shortcut="C"
+        active={false}
+        disabled={!canClose}
+        onClick={() => closePolyline()}
+        tooltip="Close polyline (C)"
       />
       <ToolButton
         icon={<Hand size={18} strokeWidth={2.5} />}
@@ -91,6 +108,17 @@ export function Toolbar() {
         onClick={handleLoad}
         tooltip="Load (Ctrl+O)"
       />
+      <div className="relative">
+        <ToolButton
+          icon={<Share2 size={18} strokeWidth={2.5} />}
+          label="Export"
+          shortcut="E"
+          active={exportMenuOpen}
+          onClick={() => setExportMenuOpen(!exportMenuOpen)}
+          tooltip="Export (E)"
+        />
+        <ExportMenu />
+      </div>
 
       <div className="w-full h-px bg-gray-200 my-0.5" />
 

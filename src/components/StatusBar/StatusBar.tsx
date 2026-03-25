@@ -21,6 +21,9 @@ export function StatusBar() {
   const mode = useEditorStore((s) => s.mode);
   const polylines = useEditorStore((s) => s.polylines);
   const cursorPos = useEditorStore((s) => s.cursorPos);
+  const scale = useEditorStore((s) => s.viewTransform.scale);
+
+  const zoomPct = Math.round(scale * 100);
 
   return (
     <div
@@ -38,7 +41,11 @@ export function StatusBar() {
         Polylines: {polylines.length} / 100
       </span>
       <span className="text-slate-300">•</span>
-      <span className="text-slate-400 font-mono">
+      <span className="text-slate-500 tabular-nums">
+        Zoom: {zoomPct}%
+      </span>
+      <span className="text-slate-300">•</span>
+      <span className="text-slate-400 font-mono tabular-nums">
         ({Math.round(cursorPos.x)}, {Math.round(cursorPos.y)})
       </span>
     </div>

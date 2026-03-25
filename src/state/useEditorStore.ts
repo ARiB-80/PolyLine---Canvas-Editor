@@ -1,47 +1,62 @@
 import { create } from 'zustand';
-import { EditorMode, EditorState, Point, Polyline, VertexRef, EdgeRef } from '@/types/polyline';
+import { EditorMode, EditorState, Point, Polyline, VertexRef, EdgeRef, ViewTransform } from '@/types/polyline';
 import { generateId } from '@/utils/idGenerator';
-import { MAX_POLYLINES } from '@/constants/config';
+import { MAX_POLYLINES, DEFAULT_COLOR, DEFAULT_LINE_WIDTH, ZOOM_MIN, ZOOM_MAX, ZOOM_STEP } from '@/constants/config';
+import { screenToWorld } from '@/utils/geometry';
 
 interface EditorStore extends EditorState {
   toast: string | null;
-  cursorPos: Point;
+  cursorPos: Point;         // world coordinates
   draggingVertex: VertexRef | null;
+  exportMenuOpen: boolean;
 
   setMode: (mode: EditorMode) => void;
   setCursorPos: (p: Point) => void;
   beginPolyline: () => void;
   addVertex: (p: Point) => void;
   finishPolyline: () => void;
+  closePolyline: () => void;
   deleteVertex: (ref: VertexRef) => void;
   moveVertex: (ref: VertexRef, newPos: Point) => void;
   insertVertex: (polylineId: string, edgeStartIndex: number, point: Point) => void;
   setHoveredVertex: (ref: VertexRef | null) => void;
   setHoveredEdge: (ref: EdgeRef | null) => void;
   setDraggingVertex: (ref: VertexRef | null) => void;
+  selectPolyline: (id: string | null) => void;
+  setPolylineColor: (id: string, color: string) => void;
+  setPolylineLineWidth: (id: string, width: number) => void;
   loadPolylines: (polylines: Polyline[]) => void;
   clearAll: () => void;
   undo: () => void;
   redo: () => void;
   showToast: (msg: string) => void;
   clearToast: () => void;
+  zoomAtPoint: (screenPt: Point, delta: number) => void;
+  pan: (deltaX: number, deltaY: number) => void;
+  resetView: () => void;
+  setExportMenuOpen: (open: boolean) => void;
 }
 
 function snapshot(polylines: Polyline[]): Polyline[] {
   return polylines.map(p => ({ ...p, points: [...p.points] }));
 }
 
+const DEFAULT_VIEW: ViewTransform = { scale: 1, offsetX: 0, offsetY: 0 };
+
 export const useEditorStore = create<EditorStore>((set, get) => ({
   polylines: [],
   activePolylineId: null,
+  selectedPolylineId: null,
   mode: 'idle',
   hoveredVertex: null,
   hoveredEdge: null,
+  viewTransform: DEFAULT_VIEW,
   history: [],
   future: [],
   toast: null,
   cursorPos: { x: 0, y: 0 },
   draggingVertex: null,
+  exportMenuOpen: false,
 
   setMode: (mode) => {
     const prev = get().mode;
@@ -60,7 +75,13 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       return;
     }
     const id = generateId();
-    const newPoly: Polyline = { id, points: [], closed: false };
+    const newPoly: Polyline = {
+      id,
+      points: [],
+      closed: false,
+      color: DEFAULT_COLOR,
+      lineWidth: DEFAULT_LINE_WIDTH,
+    };
     set(s => ({
       polylines: [...s.polylines, newPoly],
       activePolylineId: id,
@@ -88,7 +109,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     if (!activePolylineId) return;
     const poly = polylines.find(p => p.id === activePolylineId);
     if (poly && poly.points.length < 2) {
-      // Remove single-point polyline
       set(s => ({
         polylines: s.polylines.filter(p => p.id !== activePolylineId),
         activePolylineId: null,
@@ -96,6 +116,28 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     } else {
       set({ activePolylineId: null });
     }
+  },
+
+  closePolyline: () => {
+    const { activePolylineId, polylines } = get();
+    if (!activePolylineId) {
+      get().showToast('Start drawing first (press B)');
+      return;
+    }
+    const poly = polylines.find(p => p.id === activePolylineId);
+    if (!poly || poly.points.length < 3) {
+      get().showToast('Need at least 3 points to close');
+      return;
+    }
+    set(s => ({
+      history: [...s.history, snapshot(s.polylines)],
+      future: [],
+      polylines: s.polylines.map(p =>
+        p.id === activePolylineId ? { ...p, closed: true } : p
+      ),
+      activePolylineId: null,
+      mode: 'idle',
+    }));
   },
 
   deleteVertex: (ref) => {
@@ -109,11 +151,15 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set(s => ({
       history: [...s.history, snapshot(s.polylines)],
       future: [],
-      polylines: s.polylines.map(p => {
-        if (p.id !== ref.polylineId) return p;
-        const newPoints = p.points.filter((_, i) => i !== ref.vertexIndex);
-        return { ...p, points: newPoints };
-      }).filter(p => p.points.length > 0),
+      polylines: s.polylines
+        .map(p => {
+          if (p.id !== ref.polylineId) return p;
+          const newPoints = p.points.filter((_, i) => i !== ref.vertexIndex);
+          // If deleting from a closed polyline leaves < 3 points, open it
+          const stillClosed = p.closed && newPoints.length >= 3;
+          return { ...p, points: newPoints, closed: stillClosed };
+        })
+        .filter(p => p.points.length > 0),
     }));
   },
 
@@ -145,12 +191,31 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   setHoveredEdge: (ref) => set({ hoveredEdge: ref }),
   setDraggingVertex: (ref) => set({ draggingVertex: ref }),
 
+  selectPolyline: (id) => set({ selectedPolylineId: id }),
+
+  setPolylineColor: (id, color) => {
+    set(s => ({
+      history: [...s.history, snapshot(s.polylines)],
+      future: [],
+      polylines: s.polylines.map(p => p.id === id ? { ...p, color } : p),
+    }));
+  },
+
+  setPolylineLineWidth: (id, width) => {
+    set(s => ({
+      history: [...s.history, snapshot(s.polylines)],
+      future: [],
+      polylines: s.polylines.map(p => p.id === id ? { ...p, lineWidth: width } : p),
+    }));
+  },
+
   loadPolylines: (polylines) => {
     set(s => ({
       history: [...s.history, snapshot(s.polylines)],
       future: [],
       polylines,
       activePolylineId: null,
+      selectedPolylineId: null,
       mode: 'idle',
     }));
   },
@@ -161,6 +226,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       future: [],
       polylines: [],
       activePolylineId: null,
+      selectedPolylineId: null,
     }));
   },
 
@@ -173,6 +239,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       future: [snapshot(s.polylines), ...s.future],
       polylines: prev,
       activePolylineId: null,
+      selectedPolylineId: null,
     }));
   },
 
@@ -185,6 +252,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       history: [...s.history, snapshot(s.polylines)],
       polylines: next,
       activePolylineId: null,
+      selectedPolylineId: null,
     }));
   },
 
@@ -194,4 +262,32 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   clearToast: () => set({ toast: null }),
+
+  zoomAtPoint: (screenPt, delta) => {
+    const { viewTransform } = get();
+    const zoomFactor = delta > 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
+    const newScale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, viewTransform.scale * zoomFactor));
+    const worldPt = screenToWorld(screenPt, viewTransform);
+    set({
+      viewTransform: {
+        scale: newScale,
+        offsetX: screenPt.x - worldPt.x * newScale,
+        offsetY: screenPt.y - worldPt.y * newScale,
+      },
+    });
+  },
+
+  pan: (deltaX, deltaY) => {
+    set(s => ({
+      viewTransform: {
+        ...s.viewTransform,
+        offsetX: s.viewTransform.offsetX + deltaX,
+        offsetY: s.viewTransform.offsetY + deltaY,
+      },
+    }));
+  },
+
+  resetView: () => set({ viewTransform: DEFAULT_VIEW }),
+
+  setExportMenuOpen: (open) => set({ exportMenuOpen: open }),
 }));

@@ -1,15 +1,39 @@
-import { Point, Polyline, VertexRef, EdgeRef } from '@/types/polyline';
+import { Point, Polyline, EdgeRef, ViewTransform } from '@/types/polyline';
 import {
-  LINE_COLOR, LINE_WIDTH, VERTEX_RADIUS, HOVERED_VERTEX_RADIUS,
-  VERTEX_COLOR, ACCENT_COLOR, GRID_SIZE, GRID_DOT_COLOR
+  VERTEX_RADIUS, HOVERED_VERTEX_RADIUS,
+  VERTEX_COLOR, ACCENT_COLOR, GRID_SIZE, GRID_DOT_COLOR,
+  LINE_COLOR, LINE_WIDTH
 } from '@/constants/config';
 
-export function drawGrid(ctx: CanvasRenderingContext2D, width: number, height: number) {
+export function drawGrid(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  view: ViewTransform
+) {
+  const { scale, offsetX, offsetY } = view;
+
+  // Adjust grid spacing based on zoom
+  let spacing = GRID_SIZE;
+  if (scale < 0.25) spacing = 100;
+  else if (scale < 0.5) spacing = 40;
+
+  // Visible world bounds
+  const wLeft = -offsetX / scale;
+  const wTop = -offsetY / scale;
+  const wRight = (width - offsetX) / scale;
+  const wBottom = (height - offsetY) / scale;
+
+  const startX = Math.floor(wLeft / spacing) * spacing;
+  const startY = Math.floor(wTop / spacing) * spacing;
+
+  // Draw in world space (ctx is already transformed)
+  const dotRadius = 0.8 / scale; // constant ~0.8px on screen
   ctx.fillStyle = GRID_DOT_COLOR;
-  for (let x = GRID_SIZE; x < width; x += GRID_SIZE) {
-    for (let y = GRID_SIZE; y < height; y += GRID_SIZE) {
+  for (let x = startX; x <= wRight; x += spacing) {
+    for (let y = startY; y <= wBottom; y += spacing) {
       ctx.beginPath();
-      ctx.arc(x, y, 0.8, 0, Math.PI * 2);
+      ctx.arc(x, y, dotRadius, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -22,37 +46,26 @@ export function drawPolyline(
   hoveredEdge: EdgeRef | null
 ) {
   if (poly.points.length === 0) return;
+  const color = poly.color || LINE_COLOR;
+  const lw = poly.lineWidth || LINE_WIDTH;
+
   ctx.save();
-  ctx.strokeStyle = poly.color || LINE_COLOR;
-  ctx.lineWidth = poly.lineWidth || LINE_WIDTH;
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
 
   if (poly.points.length === 1) {
-    drawVertexDot(ctx, poly.points[0], false);
     ctx.restore();
     return;
   }
 
-  for (let i = 0; i < poly.points.length - 1; i++) {
+  const edgeCount = poly.closed ? poly.points.length : poly.points.length - 1;
+  for (let i = 0; i < edgeCount; i++) {
     const a = poly.points[i];
-    const b = poly.points[i + 1];
+    const b = poly.points[(i + 1) % poly.points.length];
     const isHovered = hoveredEdge?.polylineId === poly.id && hoveredEdge?.edgeStartIndex === i;
-
     ctx.beginPath();
-    ctx.strokeStyle = isHovered ? ACCENT_COLOR : (poly.color || LINE_COLOR);
-    ctx.lineWidth = isHovered ? (poly.lineWidth || LINE_WIDTH) + 1 : (poly.lineWidth || LINE_WIDTH);
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.stroke();
-  }
-
-  if (poly.closed && poly.points.length > 2) {
-    const a = poly.points[poly.points.length - 1];
-    const b = poly.points[0];
-    ctx.beginPath();
-    ctx.strokeStyle = poly.color || LINE_COLOR;
-    ctx.lineWidth = poly.lineWidth || LINE_WIDTH;
+    ctx.strokeStyle = isHovered ? ACCENT_COLOR : color;
+    ctx.lineWidth = isHovered ? lw + 1 : lw;
     ctx.moveTo(a.x, a.y);
     ctx.lineTo(b.x, b.y);
     ctx.stroke();
@@ -61,12 +74,29 @@ export function drawPolyline(
   ctx.restore();
 }
 
+export function drawSelectionHighlight(ctx: CanvasRenderingContext2D, poly: Polyline) {
+  if (poly.points.length < 2) return;
+  ctx.save();
+  ctx.strokeStyle = ACCENT_COLOR + '55';
+  ctx.lineWidth = (poly.lineWidth || LINE_WIDTH) + 5;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(poly.points[0].x, poly.points[0].y);
+  for (let i = 1; i < poly.points.length; i++) {
+    ctx.lineTo(poly.points[i].x, poly.points[i].y);
+  }
+  if (poly.closed) ctx.closePath();
+  ctx.stroke();
+  ctx.restore();
+}
+
 export function drawVertexDot(ctx: CanvasRenderingContext2D, p: Point, hovered: boolean) {
   ctx.save();
   if (hovered) {
     ctx.beginPath();
     ctx.arc(p.x, p.y, HOVERED_VERTEX_RADIUS, 0, Math.PI * 2);
-    ctx.fillStyle = ACCENT_COLOR + '4D'; // 30% opacity
+    ctx.fillStyle = ACCENT_COLOR + '4D';
     ctx.fill();
     ctx.strokeStyle = ACCENT_COLOR;
     ctx.lineWidth = 1.5;

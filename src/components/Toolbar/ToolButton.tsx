@@ -7,23 +7,27 @@ interface ToolButtonProps {
   shortcut?: string;
   active?: boolean;
   danger?: boolean;
+  disabled?: boolean;
   onClick: () => void;
   tooltip: string;
 }
 
-export function ToolButton({ icon, label, shortcut, active, danger, onClick, tooltip }: ToolButtonProps) {
+export function ToolButton({ icon, label, shortcut, active, danger, disabled, onClick, tooltip }: ToolButtonProps) {
   return (
     <div className="relative group">
       <button
         onClick={onClick}
+        disabled={disabled}
         title={tooltip}
         className={`
           relative w-10 h-10 flex items-center justify-center rounded-lg transition-all duration-150
-          ${active
-            ? danger
-              ? 'bg-red-100 text-red-600 ring-2 ring-red-400'
-              : 'bg-violet-100 text-violet-700 ring-2 ring-violet-400'
-            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+          ${disabled
+            ? 'text-slate-300 cursor-not-allowed'
+            : active
+              ? danger
+                ? 'bg-red-100 text-red-600 ring-2 ring-red-400'
+                : 'bg-violet-100 text-violet-700 ring-2 ring-violet-400'
+              : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
           }
         `}
       >
