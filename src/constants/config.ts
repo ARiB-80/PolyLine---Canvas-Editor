@@ -1,0 +1,10 @@
+export const HIT_RADIUS = 12;
+export const MAX_POLYLINES = 100;
+export const VERTEX_RADIUS = 4;
+export const HOVERED_VERTEX_RADIUS = 8;
+export const LINE_COLOR = '#1E293B';
+export const LINE_WIDTH = 2;
+export const VERTEX_COLOR = '#7C3AED';
+export const ACCENT_COLOR = '#7C3AED';
+export const GRID_SIZE = 20;
+export const GRID_DOT_COLOR = '#E5E7EB';
